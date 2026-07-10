@@ -36,7 +36,6 @@ c
       use fncorpmod
       use solvedata
       use iso_c_binding
-
 c      use readarrays !reads in uold and acold
       
         include "common.h"
@@ -48,6 +47,7 @@ c      use readarrays !reads in uold and acold
 #if !defined(HAVE_SVLS) && !defined(HAVE_LESLIB)
 #error "You must enable a linear solver during cmake setup"
 #endif
+        logical exlog
 
 c
 
@@ -104,6 +104,9 @@ c
 
         integer :: iv_rankpernode, iv_totnodes, iv_totcores
         integer :: iv_node, iv_core, iv_thread
+        integer nICpoints, nyTot, ny, nx, nz, ix, iy, iz, ijkNum, kjiNum
+        real*8, allocatable :: ordIC(:,:), ypoints(:), xpoints(:), zpoints(:)
+
 !--------------------------------------------------------------------
 !     Setting up svLS
 #ifdef HAVE_SVLS
@@ -155,6 +158,75 @@ c
         acold  = ac
 
 !!!!!!!!!!!!!!!!!!!
+        inquire(file="InitialCondition-Ord.dat",exist=exlog)
+        if(exlog) then
+          open (unit=123,file="InitialCondition-Ord.dat",status="old")
+          read(123,*) nICpoints
+          allocate(ordIC(nICpoints,7))
+          do i=1,nICpoints
+            read(123,*) (ordIC(i,j),j=1,7)
+          enddo
+          open (unit=234,file="crdY.dat",status="old")
+          read(234,*) nyTot
+          read(234,*) ny
+          allocate(ypoints(ny))
+          do i=1,ny
+            read(234,*) ypoints(i)
+          enddo
+          open (unit=345,file="crdX.dat",status="old")
+          read(345,*) nx
+          allocate(xpoints(nx))
+          do i=1,nx
+            read(345,*) xpoints(i)
+          enddo
+          open (unit=456,file="crdZ.dat",status="old")
+          read(456,*) nz
+          allocate(zpoints(nz))
+          do i=1,nz
+            read(456,*) zpoints(i)
+          enddo
+          do i=1,nshg
+            do j=1,nx
+              if (abs(x(i,1)-xpoints(j)).lt.5.0e-2) then
+                ix = j
+                exit
+              endif
+            enddo
+            do j=1,ny
+              if (abs(x(i,2)-ypoints(j)).lt.5.0e-2) then
+                iy = j
+                exit
+              else
+                iy = -1
+              endif
+            enddo
+            do j=1,nz
+              if (abs(x(i,3)-zpoints(j)).lt.5.0e-2) then
+                iz = j
+                exit
+              endif
+            enddo
+            kjiNum = nz*nyTot*(ix-1)+nz*(iy-1)+iz
+            ijkNum = nx*nyTot*(iz-1)+nx*(iy-1)+ix
+            if (iy.ne.-1) then
+               yold(i,1)   = ordIC(ijkNum,4)
+               yold(i,2:4) = ordIC(ijkNum,5:7)
+               y(i,1:4)    = yold(i,1:4)
+            endif
+          enddo
+          deallocate(ypoints)
+          deallocate(xpoints)
+          deallocate(zpoints)
+          deallocate(ordIC)
+          close(123)
+          close(234)
+          close(345)
+          close(456)
+        else
+           if(myrank.eq.master) write(*,*)
+     &                     'Did not read file InitialCondition-Ord.dat'
+        endif
+
 !Init output fields
 !!!!!!!!!!!!!!!!!!
         numerr=10+isurf
@@ -246,6 +318,18 @@ c
 c
 c...initialize the coefficients for the impedance convolution,
 c   which are functions of alphaf so need to do it after itrSetup
+        if(itke .eq. 1) then
+          if (myrank .eq. master) then
+            inquire(file="TKE-dissip.dat",exist=exlog)
+            if(exlog) then
+              open (unit=195, file="TKE-dissip.dat", status="old")
+            else
+              open (unit=195, file="TKE-dissip.dat", status="new")
+            endif
+            close(195)
+          endif
+        endif
+
          if(numImpSrfs.gt.zero) then
             call calcImpConvCoef (numImpSrfs, ntimeptpT)
          endif
@@ -488,6 +572,9 @@ c
                      endif      ! end of flow or scalar update
                   endif         ! end of switch between solve or update
                enddo            ! loop over sequence in step
+               if(itke .eq. 1) then
+                 call PrintTKEAndDissip (y, x, shp, shgl, istp, lstep * Delt(1))
+               endif
 c     
 c
 c.... obtain the time average statistics

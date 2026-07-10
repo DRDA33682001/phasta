@@ -46,7 +46,7 @@ c.... gather the data to the current block
 c
 
 CAD      rlocal = yl={P, u, v, w, T, scalar1, ...}
-CAD	 global = y = {u, v, w, P, T, scalar1, ...}
+CAD      global = y = {u, v, w, P, T, scalar1, ...}
 
 CAD      Put u,v,w in the slots 2,3,4 of yl 
 
@@ -101,3 +101,4 @@ c
 c.... end
 c
         end
+

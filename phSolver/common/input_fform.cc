@@ -1,4 +1,3 @@
-#include <fstream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <vector>
@@ -284,7 +283,10 @@ int input_fform(phSolver::Input& inp)
     outpar.nsynciofiles = inp.GetValue("Number of SyncIO Files");
     if((string)inp.GetValue("Print Statistics") == "True") outpar.ioform = 2;
     else outpar.ioform = 1;
-  
+    
+    if((string)inp.GetValue("Print tke and dissipation") == "True") outpar.itke = 1;
+    else outpar.itke = 0;
+
     if((string)inp.GetValue("Print Wall Fluxes") == "True") outpar.iowflux = 1;
     else outpar.iowflux = 0;
 

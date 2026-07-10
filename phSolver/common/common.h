@@ -234,7 +234,7 @@ c
      &                  ncycles_startphaseavg, ivort, icomputevort,
      &                  nsynciofiles, nsynciofieldswriterestart, 
      &                  iv_rankpercore, iv_corepernode, 
-     &                  input_mode, output_mode
+     &                  input_mode, output_mode, itke
 
         common /point / mbeg,   mend,   mprec
 c

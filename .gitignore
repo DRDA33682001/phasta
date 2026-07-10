@@ -1,0 +1,9 @@
+build/
+build_phasta/
+*.o
+*.a
+*.mod
+*.so
+*.bak
+.DS_Store
+*~

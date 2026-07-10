@@ -495,6 +495,7 @@ extern "C" {
     int iv_corepernode; 
     int input_mode; //FIXME -1:streams, 0:posix, >0:syncio
     int output_mode; //FIXME -1:streams, 0:posix, >0:syncio
+    int itke;
     /*  int iostats; */
 /*      int ipresref; */
   } outpar ;
