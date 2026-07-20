@@ -186,32 +186,34 @@ c
             read(456,*) zpoints(i)
           enddo
           do i=1,nshg
+            ix = -1
             do j=1,nx
               if (abs(x(i,1)-xpoints(j)).lt.5.0e-2) then
                 ix = j
                 exit
               endif
             enddo
+            iy = -1
             do j=1,ny
               if (abs(x(i,2)-ypoints(j)).lt.5.0e-2) then
                 iy = j
                 exit
-              else
-                iy = -1
               endif
             enddo
+            iz = -1
             do j=1,nz
               if (abs(x(i,3)-zpoints(j)).lt.5.0e-2) then
                 iz = j
                 exit
               endif
             enddo
-            kjiNum = nz*nyTot*(ix-1)+nz*(iy-1)+iz
-            ijkNum = nx*nyTot*(iz-1)+nx*(iy-1)+ix
-            if (iy.ne.-1) then
-               yold(i,1)   = ordIC(ijkNum,4)
-               yold(i,2:4) = ordIC(ijkNum,5:7)
+            if (ix.ne.-1 .and. iy.ne.-1 .and. iz.ne.-1) then
+               kjiNum = nz*nyTot*(ix-1)+nz*(iy-1)+iz
+               ijkNum = nx*nyTot*(iz-1)+nx*(iy-1)+ix
+               yold(i,1:3) = ordIC(ijkNum,5:7)
+               yold(i,4)   = ordIC(ijkNum,4)
                y(i,1:4)    = yold(i,1:4)
+
             endif
           enddo
           deallocate(ypoints)
@@ -573,7 +575,7 @@ c
                   endif         ! end of switch between solve or update
                enddo            ! loop over sequence in step
                if(itke .eq. 1) then
-                 call PrintTKEAndDissip (y, x, shp, shgl, istp, lstep * Delt(1))
+                 call PrintTKEAndDissip (y, x, shp, shgl, istp, (lstep+1) * Delt(1))
                endif
 c     
 c

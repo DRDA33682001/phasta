@@ -14,9 +14,11 @@
       real*8  t
 
       real*8, allocatable :: vol_e(:), Ek_e(:), Enstr_e(:),
-     &                       Viscdissip_e(:), divu_e(:)
+     &                       Viscdissip_e(:), divu_e(:),
+     &                       graddivdissip_e(:)
+      real*8, allocatable :: tmpshp(:,:), tmpshgl(:,:,:)
 
-      real*8  vol, Ek, Enstr, Viscdissip, divu
+      real*8  vol, Ek, Enstr, Viscdissip, divu, graddivdissip
       real*8  volTotal, EkTotal, EnstrTotal, ViscdissipTotal, dissip
       real*8  divuTotal, SGSdissipTotal, fdotudissipTotal, graddivdissipTotal
       real*8  nuu
@@ -26,6 +28,7 @@
       Enstr      = zero
       Viscdissip = zero
       divu       = zero
+      graddivdissip = zero
       nuu        = datmat(1,2,1)   ! molecular viscosity (rho=1 => = nu)
 
 c
@@ -44,11 +47,21 @@ c
          allocate ( Enstr_e(npro)      )
          allocate ( Viscdissip_e(npro) )
          allocate ( divu_e(npro)       )
+         allocate ( graddivdissip_e(npro) )
+         
+         ! Allocate contiguous arrays for shape functions
+         allocate ( tmpshp(nshl,ngauss) )
+         allocate ( tmpshgl(nsd,nshl,ngauss) )
+
+         ! Perform copy-in
+         tmpshp(1:nshl,1:ngauss) = shp(lcsyst,1:nshl,1:ngauss)
+         tmpshgl(:,1:nshl,1:ngauss) = shgl(lcsyst,:,1:nshl,1:ngauss)
 
          call ComputeElmTKEAndDissip ( y, x,
-     &              shp(lcsyst,1:nshl,:), shgl(lcsyst,:,1:nshl,:),
+     &              tmpshp, tmpshgl,
      &              mien(iblk)%p,
-     &              vol_e, Ek_e, Enstr_e, Viscdissip_e, divu_e )
+     &              vol_e, Ek_e, Enstr_e, Viscdissip_e, divu_e,
+     &              graddivdissip_e )
 
          do i = 1, npro
             vol        = vol        + vol_e(i)
@@ -56,13 +69,17 @@ c
             Enstr      = Enstr      + Enstr_e(i)
             Viscdissip = Viscdissip + Viscdissip_e(i)
             divu       = divu       + divu_e(i)
+            graddivdissip = graddivdissip + graddivdissip_e(i)
          enddo
 
+         deallocate ( tmpshp       )
+         deallocate ( tmpshgl      )
          deallocate ( vol_e        )
          deallocate ( Ek_e         )
          deallocate ( Enstr_e      )
          deallocate ( Viscdissip_e )
          deallocate ( divu_e       )
+         deallocate ( graddivdissip_e )
       enddo
 
 c
@@ -73,6 +90,7 @@ c
       EnstrTotal      = Enstr
       ViscdissipTotal = Viscdissip
       divuTotal       = divu
+      graddivdissipTotal = graddivdissip
 
       if (numpe > 1) then
          call drvAllreducesclr ( vol,        volTotal        )
@@ -80,6 +98,7 @@ c
          call drvAllreducesclr ( Enstr,      EnstrTotal      )
          call drvAllreducesclr ( Viscdissip, ViscdissipTotal )
          call drvAllreducesclr ( divu,       divuTotal       )
+         call drvAllreducesclr ( graddivdissip, graddivdissipTotal )
       endif
 
 c
@@ -90,12 +109,12 @@ c
       dissip          = 2.0d0 * nuu * EnstrTotal
       ViscdissipTotal = ViscdissipTotal / volTotal
       divuTotal       = divuTotal       / volTotal
+      graddivdissipTotal = graddivdissipTotal / volTotal
       
 c.... Variables unavailable in this minimal build are set to 0.0 
 c.... to match the 8-column format safely.
       SGSdissipTotal     = zero
       fdotudissipTotal   = zero
-      graddivdissipTotal = zero
 
 c
 c.... master rank appends one line
@@ -123,7 +142,8 @@ c  viscous dissipation for every element in the block.
 c
 c-----------------------------------------------------------------------
       subroutine ComputeElmTKEAndDissip ( y, x, shp, shgl, ien,
-     &                        vol_e, Ek_e, Enstr_e, Viscdissip_e, divu_e )
+     &                        vol_e, Ek_e, Enstr_e, Viscdissip_e, divu_e,
+     &                        graddivdissip_e )
 
       include "common.h"
       include "mpif.h"
@@ -147,8 +167,11 @@ c-----------------------------------------------------------------------
      &          divu_tmp(npro)
 
       dimension vol_e(npro), Ek_e(npro), Enstr_e(npro),
-     &          Viscdissip_e(npro), divu_e(npro)
+     &          Viscdissip_e(npro), divu_e(npro),
+     &          graddivdissip_e(npro)
 
+      dimension gijd(npro,6), tauM(npro), tauC(npro), fact(npro)
+      real*8    dts, rho, rnu, fff, ff
       real*8    nuu
 
 c
@@ -169,11 +192,25 @@ c
       call localx (x, xl, ien, nsd,  'gather  ')
 
       nuu          = datmat(1,2,1)
+      rho          = datmat(1,1,1)
+      rnu          = nuu / rho
+      dts          = Dtgl * dtsfct
+      ff           = taucfct / dtsfct
+      
+      if(lcsyst.eq.1) then
+         fff = 36.0d0
+      elseif(lcsyst.eq.2) then
+         fff = 60.0d0
+      else
+         fff = 128.0d0
+      endif
+
       vol_e        = zero
       Ek_e         = zero
       Enstr_e      = zero
       Viscdissip_e = zero
       divu_e       = zero
+      graddivdissip_e = zero
 
 c
 c.... loop over the integration points (intp is the common counter that
@@ -235,6 +272,35 @@ c....    strain-rate tensor S_ij and its norm S_ij S_ij
 c....    divergence of velocity
          divu_tmp = g1yi(:,2) + g2yi(:,3) + g3yi(:,4)
          divu_e   = divu_e + divu_tmp * WdetJ
+
+c....    metric tensor (gijd)
+         gijd(:,1) = dxidx(:,1,1)**2 + dxidx(:,2,1)**2 + dxidx(:,3,1)**2
+         gijd(:,2) = dxidx(:,1,2)**2 + dxidx(:,2,2)**2 + dxidx(:,3,2)**2
+         gijd(:,3) = dxidx(:,1,3)**2 + dxidx(:,2,3)**2 + dxidx(:,3,3)**2
+         gijd(:,4) = dxidx(:,1,1)*dxidx(:,1,2) + dxidx(:,2,1)*dxidx(:,2,2)
+     &             + dxidx(:,3,1)*dxidx(:,3,2)
+         gijd(:,5) = dxidx(:,1,2)*dxidx(:,1,3) + dxidx(:,2,2)*dxidx(:,2,3)
+     &             + dxidx(:,3,2)*dxidx(:,3,3)
+         gijd(:,6) = dxidx(:,1,1)*dxidx(:,1,3) + dxidx(:,2,1)*dxidx(:,2,3)
+     &             + dxidx(:,3,1)*dxidx(:,3,3)
+
+c....    momentum stabilization parameter (tauM)
+         tauM = ( (2.0d0 * dts)**2 
+     &        + ( u1 * ( gijd(:,1) * u1 + gijd(:,4) * u2 + gijd(:,6) * u3 )
+     &          + u2 * ( gijd(:,4) * u1 + gijd(:,2) * u2 + gijd(:,5) * u3 )
+     &          + u3 * ( gijd(:,6) * u1 + gijd(:,5) * u2 + gijd(:,3) * u3 ) ) )
+     &        + fff * (rnu**2) * ( gijd(:,1)**2 + gijd(:,2)**2 + gijd(:,3)**2 
+     &          + 2.0d0 * ( gijd(:,4)**2 + gijd(:,5)**2 + gijd(:,6)**2 ) )
+         
+         fact = sqrt(tauM)
+         fact = 1.0d0 / fact
+
+c....    continuity stabilization parameter (tauC) and dissipation
+         tauC = rho * pt125 * fact / (gijd(:,1)+gijd(:,2)+gijd(:,3)) * ff
+
+         graddivdissip_e = graddivdissip_e
+     &                   + tauC * (divu_tmp**2) * WdetJ
+
       enddo
 
       return
