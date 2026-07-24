@@ -371,6 +371,7 @@ c     LOCALS
      &     divqi
       double precision, dimension(nsd) ::
      &     omega
+      double precision :: A_force
 c.... compute source term
       src = zero
       if(matflg(5,1) .ge. 1) then
@@ -425,6 +426,16 @@ c
      &        -omega(2)*(omega(3)*xx(:,2)-omega(2)*xx(:,3))
      &        -two*(omega(1)*u2-omega(2)*u1)
       endif
+
+c        HIT Linear Physical Forcing (dynamically using PowerInput from solver.inp)
+      if (EnableForcing .eq. 1) then
+         if (current_TKE .lt. 1.0d-8) current_TKE = 0.6186d0
+         A_force = PowerInput / (2.0d0 * current_TKE)
+         src(:,1) = src(:,1) + A_force * u1
+         src(:,2) = src(:,2) + A_force * u2
+         src(:,3) = src(:,3) + A_force * u3
+      endif
+
 c     calculate momentum residual
       rLui(:,1) =(aci(:,1) + u1 * g1yi(:,2)
      &     + u2 * g2yi(:,2)

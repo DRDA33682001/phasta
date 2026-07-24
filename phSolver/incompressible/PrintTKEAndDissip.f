@@ -114,14 +114,26 @@ c
 c.... Variables unavailable in this minimal build are set to 0.0 
 c.... to match the 8-column format safely.
       SGSdissipTotal     = zero
-      fdotudissipTotal   = zero
+      
+c.... Calculate fdotudissipTotal based on linear forcing A_force * (2*EkTotal)
+      if (EnableForcing .eq. 1) then
+         if (current_TKE .gt. 1.0d-8) then
+            fdotudissipTotal = (PowerInput / current_TKE) * EkTotal
+         else
+            fdotudissipTotal = zero
+         endif
+      else
+         fdotudissipTotal = zero
+      endif
+c.... Update the global TKE for the next time step's forcing calculation
+      current_TKE = EkTotal
 
 c
 c.... master rank appends one line
 c
       if (myrank .eq. master) then
          open (unit=195, file="TKE-dissip.dat", access="append",
-     &         status="old")
+     &         status="unknown")
          write(195,*) t, EkTotal, dissip, ViscdissipTotal, 
      &                SGSdissipTotal, fdotudissipTotal, 
      &                graddivdissipTotal, divuTotal
